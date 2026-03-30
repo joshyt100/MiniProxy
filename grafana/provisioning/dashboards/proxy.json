@@ -1,0 +1,93 @@
+{
+  "uid": "reverse-proxy",
+  "title": "Reverse Proxy",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests per second",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "sum(rate(proxy_requests_total[1m])) by (upstream)",
+        "legendFormat": "{{upstream}}"
+      }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p99 Latency",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "histogram_quantile(0.99, sum(rate(proxy_request_duration_seconds_bucket[1m])) by (le, upstream))",
+        "legendFormat": "{{upstream}}"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Upstream Health",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "proxy_upstream_healthy",
+        "legendFormat": "{{upstream}}"
+      }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Active Connections",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "proxy_active_connections",
+        "legendFormat": "{{upstream}}"
+      }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Goroutines",
+      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "go_goroutines",
+        "legendFormat": "goroutines"
+      }]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Open File Descriptors",
+      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "process_open_fds",
+        "legendFormat": "open fds"
+      }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Heap in Use",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "expr": "go_memstats_heap_inuse_bytes",
+        "legendFormat": "heap in use"
+      }]
+    }
+  ]
+}

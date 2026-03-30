@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"reverse-proxy/metrics"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -104,10 +105,15 @@ func (s *State) isHealthyAt(i int, now int64) bool {
 }
 
 func (s *State) checkAllOnce() {
-	// log.Println("health running")
 	for i := range s.ups {
 		ok := s.checkOne(i)
 		s.healthy[i].Store(ok)
+
+		val := 0.0
+		if ok {
+			val = 1.0
+		}
+		metrics.UpstreamHealthy.WithLabelValues(s.ups[i].Host).Set(val)
 	}
 }
 

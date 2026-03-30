@@ -8,6 +8,8 @@ import (
 	"net/textproto"
 	"net/url"
 	"reverse-proxy/health"
+	"reverse-proxy/metrics"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,9 +98,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	upLabel := up.Host
+	metrics.ActiveConnections.WithLabelValues(upLabel).Inc()
+	start := time.Now()
+
 	outReq, err := p.buildUpstreamRequest(r, up)
 	if err != nil {
 		done()
+		metrics.ActiveConnections.WithLabelValues(upLabel).Dec()
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 		return
 	}
@@ -107,16 +114,24 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		p.markUpstreamFailure(up)
 		done()
+		metrics.ActiveConnections.WithLabelValues(upLabel).Dec()
+		metrics.RequestsTotal.WithLabelValues(upLabel, "502").Inc()
+		metrics.RequestDuration.WithLabelValues(upLabel).Observe(time.Since(start).Seconds())
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 		return
 	}
 
-	resp.Body = &doneReadCloser{rc: resp.Body, done: done}
+	resp.Body = &doneReadCloser{rc: resp.Body, done: func() {
+		metrics.ActiveConnections.WithLabelValues(upLabel).Dec()
+		metrics.RequestDuration.WithLabelValues(upLabel).Observe(time.Since(start).Seconds())
+		done()
+	}}
 	defer func() { _ = resp.Body.Close() }()
+
+	metrics.RequestsTotal.WithLabelValues(upLabel, strconv.Itoa(resp.StatusCode)).Inc()
 
 	copyHeaders(w.Header(), resp.Header)
 	removeHopByHopHeaders(w.Header())
-
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }
