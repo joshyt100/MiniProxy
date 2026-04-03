@@ -4,6 +4,8 @@ services:
     ports:
       - "8080:8080"
       - "9090:9090"
+    volumes:
+      - ./certs:/app/certs:ro
     depends_on:
       - upstream1
       - upstream2

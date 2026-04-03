@@ -1,4 +1,10 @@
-ListenAddr: ":8080"
-Upstreams:
+listen_addr: ":8080"
+algo: lc
+upstreams:
   - http://upstream1:80
   - http://upstream2:80
+
+tls:
+  enabled: true
+  cert: "certs/cert.pem"
+  key: "certs/key.pem"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"log"
 	"net/http"
@@ -30,6 +31,15 @@ func main() {
 		cfg.Upstreams = strings.Split(*upstreamsCSV, ",")
 	}
 
+	if cfg.TLS.Enabled {
+		if cfg.TLS.CertFile == "" || cfg.TLS.KeyFile == "" {
+			log.Fatal("tls.cert and tls.key are required when tls.enabled is true")
+		}
+		if _, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
+			log.Fatalf("failed to load TLS cert/key: %v", err)
+		}
+	}
+
 	upstreams, err := proxy.ParseUpstreams(strings.Join(cfg.Upstreams, ","))
 	if err != nil {
 		log.Fatal(err)
@@ -40,13 +50,14 @@ func main() {
 
 	p := proxy.New(proxy.Options{
 		Upstreams:           upstreams,
+		Algo:                proxy.LBAlgo(cfg.Algo),
 		HealthPath:          "/health",
 		HealthInterval:      10 * time.Second,
 		HealthTimeout:       2 * time.Second,
 		PassiveFailCooldown: 30 * time.Second,
 	})
 
-	// expose /metrics on a separate internal port so it's not proxied
+	// metrics on separate internal port
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
@@ -59,6 +70,28 @@ func main() {
 		Handler:           p,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("listening on %s -> %v", cfg.ListenAddr, upstreams)
-	log.Fatal(srv.ListenAndServe())
+
+	if cfg.TLS.Enabled {
+		srv.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			CurvePreferences: []tls.CurveID{
+				tls.X25519,
+				tls.CurveP256,
+			},
+
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			},
+		}
+		log.Printf("TLS enabled, listening on %s -> %v", cfg.ListenAddr, upstreams)
+		log.Fatal(srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile))
+	} else {
+		log.Printf("listening on %s -> %v", cfg.ListenAddr, upstreams)
+		log.Fatal(srv.ListenAndServe())
+	}
 }
