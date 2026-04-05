@@ -94,7 +94,7 @@ func TestBuildUpstreamRequest(t *testing.T) {
 
 	up := mustURL(t, "http://upstream1:80/base")
 
-	outReq, err := p.buildUpstreamRequest(in, up)
+	outReq, err := p.buildUpstreamRequest(in, up, false)
 	if err != nil {
 		t.Fatalf("buildUpstreamRequest returned error: %v", err)
 	}
