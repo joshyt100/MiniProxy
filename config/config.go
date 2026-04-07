@@ -23,6 +23,14 @@ type CleartextConfig struct {
 	ListenAddr string `yaml:"listen_addr"`
 }
 
+type RateLimitConfig struct {
+	Enabled bool    `yaml:"enabled"`
+	RPS     float64 `yaml:"rps"`   // request per second
+	Burst   int     `yaml:"burst"` // max burst size (burst refers to the max requests a client can make instantly before the rate limiter kicks in)
+
+	PerIP bool `yaml:"per_ip"` // true -> per client IP, false -> global
+}
+
 type Config struct {
 	Cleartext  CleartextConfig `yaml:"cleartext"`
 	ListenAddr string          `yaml:"listen_addr"`
@@ -30,6 +38,7 @@ type Config struct {
 	Algo       string          `yaml:"algo"`
 	TLS        TLSConfig       `yaml:"tls"`
 	Metrics    MetricsConfig   `yaml:"metrics"`
+	RateLimit  RateLimitConfig `yaml:"rate_limit"`
 }
 
 func Load(path string) (*Config, error) {
@@ -50,6 +59,8 @@ func Load(path string) (*Config, error) {
 			Enabled:    true,
 			ListenAddr: ":2112",
 		},
+
+		RateLimit: RateLimitConfig{Enabled: false}, // disable rate limiting for default settings (add note to docs)
 	}
 
 	data, err := os.ReadFile(path)

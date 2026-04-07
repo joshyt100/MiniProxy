@@ -13,3 +13,9 @@ tls:
   listen_addr: ":8443"
   cert: "certs/cert.pem"
   key: "certs/key.pem"
+
+rate_limit:
+  enabled: true
+  rps: 100
+  burst: 20
+  per_ip: true

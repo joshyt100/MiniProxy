@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reverse-proxy/config"
 	"reverse-proxy/metrics"
+	"reverse-proxy/middleware"
 	"reverse-proxy/proxy"
 	"time"
 
@@ -28,7 +29,6 @@ func main() {
 	}
 
 	algo := proxy.LBAlgo(cfg.Algo)
-
 	if !cfg.Cleartext.Enabled && !cfg.TLS.Enabled {
 		log.Fatal("at least one of cleartext or tls must be enabled")
 	}
@@ -44,22 +44,38 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", p)
-	mux.Handle("/metrics", promhttp.Handler())
+
+	if cfg.Metrics.Enabled {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.Handler())
+		go func() {
+			log.Printf("metrics listening on %s", cfg.Metrics.ListenAddr)
+			if err := http.ListenAndServe(cfg.Metrics.ListenAddr, metricsMux); err != nil {
+				log.Fatalf("metrics server: %v", err)
+			}
+		}()
+	}
+
+	// build middleware chain around the proxy mux
+	var handler http.Handler = mux
+	if cfg.RateLimit.Enabled {
+		rl := middleware.NewRateLimiter(cfg.RateLimit.RPS, cfg.RateLimit.Burst, cfg.RateLimit.PerIP)
+		handler = middleware.Chain(handler, rl.Middleware())
+	}
 
 	h2s := &http2.Server{
 		MaxConcurrentStreams: 250,
 	}
-	h2cHandler := h2c.NewHandler(mux, h2s)
+	h2cHandler := h2c.NewHandler(handler, h2s)
+
 	if cfg.Cleartext.Enabled {
 		clearSrv := &http.Server{
 			Addr:    cfg.Cleartext.ListenAddr,
 			Handler: h2cHandler,
 		}
-
 		if err := http2.ConfigureServer(clearSrv, h2s); err != nil {
 			log.Fatalf("http2.ConfigureServer: %v", err)
 		}
-
 		go func() {
 			log.Printf("proxy listening on %s (h2c + http/1.1)", cfg.Cleartext.ListenAddr)
 			if err := clearSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -71,7 +87,7 @@ func main() {
 	if cfg.TLS.Enabled {
 		tlsSrv := &http.Server{
 			Addr:    cfg.TLS.ListenAddr,
-			Handler: mux,
+			Handler: handler,
 			TLSConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			},
