@@ -12,6 +12,12 @@ type TLSConfig struct {
 	KeyFile    string `yaml:"key"`
 }
 
+// add Metrics
+type MetricsConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenAddr string `yaml:"listen_addr"`
+}
+
 type CleartextConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	ListenAddr string `yaml:"listen_addr"`
@@ -23,6 +29,7 @@ type Config struct {
 	Upstreams  []string        `yaml:"upstreams"`
 	Algo       string          `yaml:"algo"`
 	TLS        TLSConfig       `yaml:"tls"`
+	Metrics    MetricsConfig   `yaml:"metrics"`
 }
 
 func Load(path string) (*Config, error) {
@@ -38,6 +45,10 @@ func Load(path string) (*Config, error) {
 		Algo: "lc",
 		TLS: TLSConfig{
 			ListenAddr: ":8443",
+		},
+		Metrics: MetricsConfig{
+			Enabled:    true,
+			ListenAddr: ":2112",
 		},
 	}
 

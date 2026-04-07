@@ -3,7 +3,7 @@ cleartext:
   enabled: true
   listen_addr: ":8080"
 
-algo: rr
+algo: lc
 
 upstreams:
   - http://127.0.0.1:50051

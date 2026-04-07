@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reverse-proxy/metrics"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -105,17 +106,23 @@ func (s *State) isHealthyAt(i int, now int64) bool {
 }
 
 func (s *State) checkAllOnce() {
+	var wg sync.WaitGroup
 	for i := range s.ups {
-		ok := s.checkOne(i)
-		s.healthy[i].Store(ok)
-
-		val := 0.0
-		if ok {
-			val = 1.0
-		}
-		metrics.UpstreamHealthy.WithLabelValues(s.ups[i].Host).Set(val)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ok := s.checkOne(i)
+			s.healthy[i].Store(ok)
+			val := 0.0
+			if ok {
+				val = 1.0
+			}
+			metrics.UpstreamHealthy.WithLabelValues(s.ups[i].Host).Set(val)
+		}(i)
 	}
+	wg.Wait()
 }
+
 func (s *State) checkOne(i int) bool {
 	up := s.ups[i]
 	target := *up
