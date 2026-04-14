@@ -20,6 +20,7 @@ type Proxy struct {
 	upstreams     []*url.URL
 	http11Client  *http.Client // HTTP/1.1 only — nginx, plain HTTP upstreams
 	h2cClient     *http.Client // h2c — gRPC upstreams
+	h2tlsClient   *http.Client //h2 - gRPC over TLS (https://)
 	balancer      Balancer
 	health        *health.State
 	baseTransport *http.Transport
@@ -50,6 +51,7 @@ func New(opts Options) *Proxy {
 		upstreams:     opts.Upstreams,
 		http11Client:  &http.Client{Transport: http11Transport},
 		h2cClient:     &http.Client{Transport: newH2CTransport()},
+		h2tlsClient:   &http.Client{Transport: newH2cTLSTransport()},
 		baseTransport: baseTransport,
 	}
 
@@ -128,7 +130,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		resp, err := p.clientFor(grpc).Do(outReq)
+		resp, err := p.clientFor(grpc, up).Do(outReq)
 		if err != nil {
 			p.markUpstreamFailure(up)
 			done()
@@ -188,14 +190,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "bad gateway", http.StatusBadGateway)
 }
 
-// clientFor selects the transport based on whether the request is gRPC.
-// grpc=true  -> h2cClient  (HTTP/2 cleartext, required by gRPC)
-// grpc=false -> http11Client (HTTP/1.1, required by nginx and plain HTTP)
-func (p *Proxy) clientFor(grpc bool) *http.Client {
-	if grpc {
-		return p.h2cClient
+// clientFor picks the right HTTP client for the upstream.
+//
+//	non-gRPC              → http11Client  (HTTP/1.1, TLSNextProto disabled)
+//	gRPC + http://        → h2cClient     (HTTP/2 cleartext / h2c)
+//	gRPC + https://       → h2tlsClient   (HTTP/2 over TLS, ALPN h2)
+func (p *Proxy) clientFor(grpc bool, up *url.URL) *http.Client {
+	if !grpc {
+		return p.http11Client
 	}
-	return p.http11Client
+
+	if strings.EqualFold(up.Scheme, "https") {
+		return p.h2tlsClient
+	}
+	return p.h2cClient
 }
 
 func (p *Proxy) markUpstreamFailure(up *url.URL) {

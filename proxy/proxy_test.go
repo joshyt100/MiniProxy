@@ -356,12 +356,16 @@ func TestClientFor_GRPCUsesH2CClient(t *testing.T) {
 		HealthTimeout:       0,
 		PassiveFailCooldown: 0,
 	})
+	httpUp := mustURL(t, "http://localhost:9000")
+	httpsUp := mustURL(t, "https://localhost:9000")
 
-	if got := p.clientFor(true); got != p.h2cClient {
-		t.Fatal("expected gRPC requests to use h2cClient")
+	if got := p.clientFor(true, httpUp); got != p.h2cClient {
+		t.Fatal("expected gRPC+http upstream to use h2cClient")
 	}
-
-	if got := p.clientFor(false); got != p.http11Client {
+	if got := p.clientFor(true, httpsUp); got != p.h2tlsClient {
+		t.Fatal("expected gRPC+https upstream to use h2tlsClient")
+	}
+	if got := p.clientFor(false, httpUp); got != p.http11Client {
 		t.Fatal("expected non-gRPC requests to use http11Client")
 	}
 }

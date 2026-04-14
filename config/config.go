@@ -47,10 +47,6 @@ func Load(path string) (*Config, error) {
 			Enabled:    true,
 			ListenAddr: ":8080",
 		},
-		Upstreams: []string{
-			"http://localhost:9000",
-			"http://localhost:9001",
-		},
 		Algo: "lc",
 		TLS: TLSConfig{
 			ListenAddr: ":8443",

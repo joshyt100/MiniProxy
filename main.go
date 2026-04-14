@@ -16,6 +16,7 @@ import (
 )
 
 func main() {
+
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("config: %v", err)
@@ -91,6 +92,9 @@ func main() {
 			TLSConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			},
+		}
+		if err := http2.ConfigureServer(tlsSrv, h2s); err != nil {
+			log.Fatalf("http2.ConfigureServer (tls): %v", err)
 		}
 		log.Printf("proxy listening on %s (tls + http/2)", cfg.TLS.ListenAddr)
 		log.Fatal(tlsSrv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile))
