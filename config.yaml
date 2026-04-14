@@ -7,6 +7,7 @@ algo: lc
 upstreams:
   - http://demo-upstream1:80
   - http://demo-upstream2:80
+  # - http://localhost:50051
 
 tls:
   enabled: true
