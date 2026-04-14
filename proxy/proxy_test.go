@@ -369,3 +369,96 @@ func TestClientFor_GRPCUsesH2CClient(t *testing.T) {
 		t.Fatal("expected non-gRPC requests to use http11Client")
 	}
 }
+
+func TestClientFor_NonGRPCHTTPSUsesHTTP11Client(t *testing.T) {
+	p := New(Options{
+		Upstreams:           []*url.URL{mustURL(t, "http://localhost:9000")},
+		HealthPath:          "/health",
+		HealthInterval:      0,
+		HealthTimeout:       0,
+		PassiveFailCooldown: 0,
+	})
+	httpsUp := mustURL(t, "https://localhost:9000")
+
+	// Non-gRPC over https must still use http11Client, not h2tlsClient.
+	if got := p.clientFor(false, httpsUp); got != p.http11Client {
+		t.Fatal("expected non-gRPC+https upstream to use http11Client")
+	}
+}
+
+func TestBuildUpstreamRequest_GRPCTLSUpstream(t *testing.T) {
+	p := &Proxy{}
+
+	in := httptest.NewRequest(http.MethodPost, "http://proxy.local/echo.EchoService/Echo", nil)
+	in.Host = "proxy.local"
+	in.RemoteAddr = "10.0.0.7:34567"
+	in.Header.Set("Content-Type", "application/grpc+proto")
+	in.Header.Set("TE", "trailers")
+
+	up := mustURL(t, "https://upstream-tls:443")
+
+	outReq, err := p.buildUpstreamRequest(in, up, true)
+	if err != nil {
+		t.Fatalf("buildUpstreamRequest returned error: %v", err)
+	}
+
+	// URL scheme must be https, preserving the upstream's TLS scheme.
+	if got := outReq.URL.Scheme; got != "https" {
+		t.Fatalf("expected upstream scheme https, got %q", got)
+	}
+
+	if got := outReq.URL.Host; got != "upstream-tls:443" {
+		t.Fatalf("expected upstream host upstream-tls:443, got %q", got)
+	}
+
+	// gRPC TE header must be exactly "trailers".
+	if got := outReq.Header.Get("Te"); got != "trailers" {
+		t.Fatalf("expected Te=trailers for gRPC-TLS, got %q", got)
+	}
+
+	if got := outReq.Header.Get("Content-Type"); got != "application/grpc+proto" {
+		t.Fatalf("expected content-type preserved, got %q", got)
+	}
+}
+
+func TestServeHTTP_GRPCOverTLS_UsesH2TLSClient(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/grpc+proto")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("grpc-tls-response"))
+	}))
+	defer upstream.Close()
+
+	upURL := mustURL(t, upstream.URL)
+
+	// Swap the h2tlsClient transport for the test server's TLS-aware client.
+	p := New(Options{
+		Upstreams:           []*url.URL{upURL},
+		HealthPath:          "/health",
+		HealthInterval:      0,
+		HealthTimeout:       0,
+		PassiveFailCooldown: 0,
+	})
+	p.h2tlsClient = upstream.Client()
+
+	req := httptest.NewRequest(http.MethodPost, "http://proxy.local/svc.Service/Method", nil)
+	req.Host = "proxy.local"
+	req.RemoteAddr = "127.0.0.1:11111"
+	req.Header.Set("Content-Type", "application/grpc+proto")
+	req.Header.Set("TE", "trailers")
+
+	rr := httptest.NewRecorder()
+	p.ServeHTTP(rr, req)
+
+	resp := rr.Result()
+	defer func() { _ = resp.Body.Close() }()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if string(body) != "grpc-tls-response" {
+		t.Fatalf("unexpected body: %q", string(body))
+	}
+}
