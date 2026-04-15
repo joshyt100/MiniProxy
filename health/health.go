@@ -168,3 +168,8 @@ func cleanPath(p string) string {
 	}
 	return p
 }
+
+// add function to close stop channel
+func (s *State) Stop() {
+	close(s.stopCh)
+}

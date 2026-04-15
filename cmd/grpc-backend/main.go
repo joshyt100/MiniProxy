@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 
 	"reverse-proxy/testgrpc/echopb"
@@ -28,10 +30,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	grpcServer := grpc.NewServer()
+	cert, err := tls.LoadX509KeyPair("certs/cert.pem", "certs/key.pem")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	creds := credentials.NewTLS(tlsConfig)
+
+	grpcServer := grpc.NewServer(grpc.Creds(creds))
 	echopb.RegisterEchoServiceServer(grpcServer, &server{})
 	reflection.Register(grpcServer)
 
-	log.Println("gRPC backend listening on :50051")
+	log.Println("gRPC TLS backend listening on :50051")
 	log.Fatal(grpcServer.Serve(lis))
 }

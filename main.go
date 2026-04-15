@@ -2,12 +2,14 @@ package main
 
 import (
 	"crypto/tls"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"reverse-proxy/config"
 	"reverse-proxy/metrics"
 	"reverse-proxy/middleware"
 	"reverse-proxy/proxy"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -16,22 +18,38 @@ import (
 )
 
 func main() {
-
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		slog.Error("failed to load config", "path", "config.yaml", "error", err)
+		os.Exit(1)
 	}
 
+	logger := newLogger(cfg)
+	slog.SetDefault(logger)
+
+	logger.Info("config loaded",
+		"cleartext_enabled", cfg.Cleartext.Enabled,
+		"tls_enabled", cfg.TLS.Enabled,
+		"metrics_enabled", cfg.Metrics.Enabled,
+		"rate_limit_enabled", cfg.RateLimit.Enabled,
+		"algo", cfg.Algo,
+	)
+
 	metrics.Register()
+	logger.Info("metrics registered")
 
 	upstreams, err := proxy.ParseUpstreams(joinUpstreams(cfg.Upstreams))
 	if err != nil {
-		log.Fatalf("upstreams: %v", err)
+		logger.Error("failed to parse upstreams", "error", err)
+		os.Exit(1)
 	}
 
 	algo := proxy.LBAlgo(cfg.Algo)
 	if !cfg.Cleartext.Enabled && !cfg.TLS.Enabled {
-		log.Fatal("at least one of cleartext or tls must be enabled")
+		logger.Error("invalid configuration",
+			"error", "at least one of cleartext or tls must be enabled",
+		)
+		os.Exit(1)
 	}
 
 	p := proxy.New(proxy.Options{
@@ -41,6 +59,7 @@ func main() {
 		HealthInterval:      5 * time.Second,
 		HealthTimeout:       2 * time.Second,
 		PassiveFailCooldown: 10 * time.Second,
+		// Logger:              logger,
 	})
 
 	mux := http.NewServeMux()
@@ -49,19 +68,32 @@ func main() {
 	if cfg.Metrics.Enabled {
 		metricsMux := http.NewServeMux()
 		metricsMux.Handle("/metrics", promhttp.Handler())
+
 		go func() {
-			log.Printf("metrics listening on %s", cfg.Metrics.ListenAddr)
+			logger.Info("metrics server listening",
+				"addr", cfg.Metrics.ListenAddr,
+			)
+
 			if err := http.ListenAndServe(cfg.Metrics.ListenAddr, metricsMux); err != nil {
-				log.Fatalf("metrics server: %v", err)
+				logger.Error("metrics server failed",
+					"addr", cfg.Metrics.ListenAddr,
+					"error", err,
+				)
+				os.Exit(1)
 			}
 		}()
 	}
 
-	// build middleware chain around the proxy mux
 	var handler http.Handler = mux
 	if cfg.RateLimit.Enabled {
 		rl := middleware.NewRateLimiter(cfg.RateLimit.RPS, cfg.RateLimit.Burst, cfg.RateLimit.PerIP)
 		handler = middleware.Chain(handler, rl.Middleware())
+
+		logger.Info("rate limiter enabled",
+			"rps", cfg.RateLimit.RPS,
+			"burst", cfg.RateLimit.Burst,
+			"per_ip", cfg.RateLimit.PerIP,
+		)
 	}
 
 	h2s := &http2.Server{
@@ -74,13 +106,27 @@ func main() {
 			Addr:    cfg.Cleartext.ListenAddr,
 			Handler: h2cHandler,
 		}
+
 		if err := http2.ConfigureServer(clearSrv, h2s); err != nil {
-			log.Fatalf("http2.ConfigureServer: %v", err)
+			logger.Error("failed to configure cleartext http2 server",
+				"addr", cfg.Cleartext.ListenAddr,
+				"error", err,
+			)
+			os.Exit(1)
 		}
+
 		go func() {
-			log.Printf("proxy listening on %s (h2c + http/1.1)", cfg.Cleartext.ListenAddr)
+			logger.Info("proxy cleartext server listening",
+				"addr", cfg.Cleartext.ListenAddr,
+				"protocols", "h2c,http/1.1",
+			)
+
 			if err := clearSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatal(err)
+				logger.Error("cleartext server failed",
+					"addr", cfg.Cleartext.ListenAddr,
+					"error", err,
+				)
+				os.Exit(1)
 			}
 		}()
 	}
@@ -93,11 +139,29 @@ func main() {
 				MinVersion: tls.VersionTLS12,
 			},
 		}
+
 		if err := http2.ConfigureServer(tlsSrv, h2s); err != nil {
-			log.Fatalf("http2.ConfigureServer (tls): %v", err)
+			logger.Error("failed to configure tls http2 server",
+				"addr", cfg.TLS.ListenAddr,
+				"error", err,
+			)
+			os.Exit(1)
 		}
-		log.Printf("proxy listening on %s (tls + http/2)", cfg.TLS.ListenAddr)
-		log.Fatal(tlsSrv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile))
+
+		logger.Info("proxy tls server listening",
+			"addr", cfg.TLS.ListenAddr,
+			"protocols", "tls,http/2",
+		)
+
+		if err := tlsSrv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
+			logger.Error("tls server failed",
+				"addr", cfg.TLS.ListenAddr,
+				"cert_file", cfg.TLS.CertFile,
+				"key_file", cfg.TLS.KeyFile,
+				"error", err,
+			)
+			os.Exit(1)
+		}
 	} else {
 		select {}
 	}
@@ -112,4 +176,37 @@ func joinUpstreams(us []string) string {
 		result += u
 	}
 	return result
+}
+
+func newLogger(cfg *config.Config) *slog.Logger {
+	level := parseLogLevel(cfg.Logger.Level)
+
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+
+	var handler slog.Handler
+	switch strings.ToLower(cfg.Logger.Format) {
+	case "text":
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	default:
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	}
+
+	return slog.New(handler)
+}
+
+func parseLogLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

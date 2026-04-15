@@ -61,7 +61,7 @@ func Load(path string) (*Config, error) {
 			Enabled:    true,
 			ListenAddr: ":2112",
 		},
-		Logger: LoggingConfig{Level: "info", Format: "json"},
+		Logger: LoggingConfig{Level: "info", Format: "text"},
 
 		RateLimit: RateLimitConfig{Enabled: false}, // disable rate limiting for default settings (add note to docs)
 	}
