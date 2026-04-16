@@ -59,7 +59,7 @@ func main() {
 		HealthInterval:      5 * time.Second,
 		HealthTimeout:       2 * time.Second,
 		PassiveFailCooldown: 10 * time.Second,
-		// Logger:              logger,
+		Logger:              logger,
 	})
 
 	mux := http.NewServeMux()

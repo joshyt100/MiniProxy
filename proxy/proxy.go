@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"net/url"
 	// "os"
+	"log/slog"
 	"reverse-proxy/health"
 	"reverse-proxy/metrics"
 	"strconv"
@@ -26,6 +27,7 @@ type Proxy struct {
 	balancer      Balancer
 	health        *health.State
 	baseTransport *http.Transport
+	logger        *slog.Logger
 }
 
 func New(opts Options) *Proxy {
@@ -49,12 +51,19 @@ func New(opts Options) *Proxy {
 		baseTransport = http11Transport
 	}
 
+	logger := opts.Logger
+
+	if logger == nil { // fallback
+		logger = slog.Default()
+	}
+
 	p := &Proxy{
 		upstreams:     opts.Upstreams,
 		http11Client:  &http.Client{Transport: http11Transport},
 		h2cClient:     &http.Client{Transport: newH2CTransport()},
 		h2tlsClient:   &http.Client{Transport: newH2cTLSTransport()},
 		baseTransport: baseTransport,
+		logger:        logger,
 	}
 
 	hs := health.NewState(
@@ -114,9 +123,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	grpc := isGRPC(r)
 
-	for attempt := 0; attempt < len(p.upstreams); attempt++ {
+	p.logger.Debug("incoming request", "method", r.Method, "path", r.URL.Path, "remote_addr", r.RemoteAddr, "grpc", grpc)
+
+	for attempt := range len(p.upstreams) {
 		up, done, ok := p.balancer.Pick(r)
 		if !ok {
+			p.logger.Error("no upstreams available", "method", r.Method, "path", r.URL.Path)
 			http.Error(w, "no upstreams available", http.StatusBadGateway)
 			return
 		}
@@ -128,6 +140,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			done()
 			metrics.ActiveConnections.WithLabelValues(upLabel).Dec()
+			p.logger.Warn("upstream failed, retrying", "upstream", up.Host, "attempt", attempt, "error", err)
 			// Non-retryable — bad request construction.
 			http.Error(w, "bad gateway", http.StatusBadGateway)
 			return
