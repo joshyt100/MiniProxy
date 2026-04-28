@@ -2,12 +2,13 @@ cleartext:
   enabled: true
   listen_addr: ":8080"
 
-algo: lc
+algo: rr
 
 upstreams:
   # - http://demo-upstream1:80
   # - http://demo-upstream2:80
   - https://localhost:50051
+  # - http://localhost:9001
   - http://localhost:50052
 
 tls:
@@ -21,7 +22,7 @@ metrics:
   listen_addr: ":2112"
 
 rate_limit:
-  enabled: true
+  enabled: false
   rps: 10
   burst: 5
   per_ip: true

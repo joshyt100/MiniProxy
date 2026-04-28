@@ -15,10 +15,11 @@ const (
 )
 
 type Options struct {
-	Upstreams []*url.URL
-	Transport *http.Transport
-	Algo      LBAlgo
-	Logger    *slog.Logger
+	Upstreams      []*url.URL
+	Transport      *http.Transport
+	Algo           LBAlgo
+	Logger         *slog.Logger
+	MetricsEnabled bool
 
 	HealthPath          string
 	HealthInterval      time.Duration
