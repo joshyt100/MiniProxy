@@ -318,12 +318,13 @@ func (p *Proxy) buildUpstreamRequest(in *http.Request, up *url.URL, grpc bool) (
 	if grpc {
 		// gRPC needs streaming request-body forwarding.
 		// Do NOT replace this with buffering, or streaming/reflection can hang.
-		pr, pw := io.Pipe()
-		go func() {
-			_, err := io.Copy(pw, in.Body)
-			_ = pw.CloseWithError(err)
-		}()
-		body = pr
+		// pr, pw := io.Pipe()
+		// go func() {
+		// 	_, err := io.Copy(pw, in.Body)
+		// 	_ = pw.CloseWithError(err)
+		// }()
+		// body = pr
+		body = in.Body
 	} else if hasRequestBody(in) {
 		// Fast path for normal HTTP: no goroutine, no pipe.
 		body = in.Body
@@ -331,9 +332,6 @@ func (p *Proxy) buildUpstreamRequest(in *http.Request, up *url.URL, grpc bool) (
 
 	outReq, err := http.NewRequestWithContext(in.Context(), in.Method, target.String(), body)
 	if err != nil {
-		if pr, ok := body.(*io.PipeReader); ok {
-			_ = pr.CloseWithError(err)
-		}
 		return nil, err
 	}
 

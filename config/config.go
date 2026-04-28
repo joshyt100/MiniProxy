@@ -6,6 +6,7 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
+// TLSConfig controls HTTPS listening. If Enabled is false the TLS server is not started.
 type TLSConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	ListenAddr string `yaml:"listen_addr"`
@@ -13,30 +14,37 @@ type TLSConfig struct {
 	KeyFile    string `yaml:"key"`
 }
 
-// add Metrics
+// MetricsConfig controls the Prometheus metrics endpoint.
 type MetricsConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	ListenAddr string `yaml:"listen_addr"`
 }
 
+// CleartextConfig controls the plain HTTP listener.
 type CleartextConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	ListenAddr string `yaml:"listen_addr"`
 }
 
+// RateLimitConfig controls request rate limiting. When PerIP is true each
+// client IP gets its own token bucket; otherwise a single global bucket is used.
 type RateLimitConfig struct {
 	Enabled bool    `yaml:"enabled"`
-	RPS     float64 `yaml:"rps"`   // request per second
-	Burst   int     `yaml:"burst"` // max burst size
-
-	PerIP bool `yaml:"per_ip"` // true -> per client IP, false -> global
+	RPS     float64 `yaml:"rps"`   // sustained requests per second
+	Burst   int     `yaml:"burst"` // maximum burst above RPS
+	PerIP   bool    `yaml:"per_ip"`
 }
 
+// LoggingConfig sets the log verbosity and output format.
+// Level is one of debug, info, warn, error. Format is json or text.
 type LoggingConfig struct {
-	Level  string `yaml:"level"`  // debug, info, warn error
-	Format string `yaml:"format"` // json, text
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
 }
 
+// HealthConfig controls active upstream health checking. When Enabled is false
+// upstreams are assumed healthy unless passive failures say otherwise.
+// PassiveCooldownSecs sets how long a failed upstream is excluded from rotation.
 type HealthConfig struct {
 	Enabled             bool   `yaml:"enabled"`
 	Path                string `yaml:"path"`
@@ -45,6 +53,9 @@ type HealthConfig struct {
 	PassiveCooldownSecs int    `yaml:"passive_cooldown_seconds"`
 }
 
+// Config is the top-level configuration for the proxy, populated from a YAML
+// file. All fields have defaults applied by Load before unmarshalling, so
+// missing keys fall back to sensible values rather than zero values.
 type Config struct {
 	Cleartext  CleartextConfig `yaml:"cleartext"`
 	ListenAddr string          `yaml:"listen_addr"`
@@ -57,6 +68,9 @@ type Config struct {
 	Health     HealthConfig    `yaml:"health"`
 }
 
+// Load reads and parses the YAML file at path into a Config. Defaults are
+// applied before unmarshalling so partial files are valid. If the file does
+// not exist the defaults are returned as-is without an error.
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Cleartext: CleartextConfig{
@@ -71,10 +85,8 @@ func Load(path string) (*Config, error) {
 			Enabled:    true,
 			ListenAddr: ":2112",
 		},
-		Logger: LoggingConfig{Level: "info", Format: "text"},
-
+		Logger:    LoggingConfig{Level: "info", Format: "text"},
 		RateLimit: RateLimitConfig{Enabled: false},
-
 		Health: HealthConfig{
 			Enabled:             false,
 			Path:                "/",
