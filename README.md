@@ -78,7 +78,7 @@ rate_limit:
   per_ip: true
 health:
   enabled: false
-  path: /healthz
+  path: /health
   interval_seconds: 10
   timeout_seconds: 2
   passive_cooldown_secs: 30
