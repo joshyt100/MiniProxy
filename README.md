@@ -1,4 +1,4 @@
-# Steward
+# MiniProxy
 
 A lightweight reverse proxy in Go that multiplexes HTTP/1.1 and HTTP/2 (including gRPC) traffic on the same port.
 
