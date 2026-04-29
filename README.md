@@ -78,6 +78,15 @@ rate_limit:
   per_ip: true
 health:
   enabled: false
+  path: /healthz
+  interval_seconds: 10
+  timeout_seconds: 2
+  passive_cooldown_secs: 30
+server:
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  max_concurrent_streams: 250
 ```
 
 ### Options
@@ -98,7 +107,15 @@ health:
 | `rate_limit.rps` | Requests per second allowed | `10` |
 | `rate_limit.burst` | Burst size above RPS limit | `5` |
 | `rate_limit.per_ip` | Apply rate limit per IP address | `true` |
-| `health.enabled` | Enable health check endpoint | `false` |
+| `health.enabled` | Enable active health checks | `false` |
+| `health.path` | HTTP path to probe on each upstream | `/healthz` |
+| `health.interval_seconds` | How often to probe each upstream (seconds) | `10` |
+| `health.timeout_seconds` | Probe timeout before marking upstream unhealthy (seconds) | `2` |
+| `health.passive_cooldown_secs` | How long to remove a failing upstream from rotation (seconds) | `30` |
+| `server.read_timeout` | Max time to read an incoming request | `30s` |
+| `server.write_timeout` | Max time to write a response | `30s` |
+| `server.idle_timeout` | Max time to keep an idle connection open | `120s` |
+| `server.max_concurrent_streams` | Max concurrent HTTP/2 streams | `250` |
 
 ## Health checking
 
